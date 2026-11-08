@@ -1,0 +1,14 @@
+# Versões fixadas e testadas (auditadas com pip-audit em 07/11/2026: sem vulnerabilidades conhecidas).
+# Para atualizar: altere aqui, rode ./scripts/rodar-testes.sh e a auditoria descrita no README.
+fastapi==0.162.1
+starlette==1.10.0
+uvicorn==0.54.0
+pydantic==2.14.3
+SQLAlchemy==2.1.8
+psycopg[binary]==3.3.8
+argon2-cffi==25.1.0
+httpx==0.28.1
+reportlab==5.1.0
+matplotlib==3.11.2
+pillow==13.0.0
+openpyxl==3.1.5

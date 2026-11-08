@@ -1,0 +1,2 @@
+# Coloque aqui servidor.crt e servidor.key do certificado institucional.
+# Se a pasta estiver vazia, um certificado autoassinado é gerado na 1ª execução.

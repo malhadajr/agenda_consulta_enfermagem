@@ -1,0 +1,10 @@
+.env
+secrets/
+backups/
+importacao/
+nginx/certs/*.crt
+nginx/certs/*.key
+**/__pycache__/
+**/.pytest_cache/
+*.db
+desktop.ini

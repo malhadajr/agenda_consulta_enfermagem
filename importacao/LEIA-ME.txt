@@ -1,0 +1,2 @@
+Coloque aqui o .xlsx exportado da planilha antiga para importar (veja o README, seção 7).
+Apague o arquivo depois da importação.

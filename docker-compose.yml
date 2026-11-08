@@ -1,0 +1,118 @@
+# =============================================================================
+# NOVA AGENDA 2027 — pilha completa para uma VM Linux da Intranet
+#   nginx  : HTTPS (porta 443) e redirecionamento da 80  -> única porta exposta
+#   app    : aplicação web (FastAPI), sem root, sistema de arquivos somente leitura
+#   db     : PostgreSQL 16 (rede interna, SEM porta exposta)
+#   backup : pg_dump diário (padrão 00:00) com retenção configurável
+# Configuração em .env (copie de .env.example). Senha do banco em secrets/db_password.txt
+# =============================================================================
+name: nova-agenda-2027
+
+x-seguranca: &seguranca
+  restart: unless-stopped
+  security_opt: ["no-new-privileges:true"]
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+services:
+  db:
+    <<: *seguranca
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: nova_agenda
+      POSTGRES_USER: nova_agenda
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+      TZ: ${TZ:-America/Sao_Paulo}
+      PGTZ: ${TZ:-America/Sao_Paulo}
+    secrets: [db_password]
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks: [interna]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nova_agenda -d nova_agenda"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    <<: *seguranca
+    build:
+      context: ./app
+    image: nova-agenda-2027/app:2.1.1
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      DB_HOST: db
+      DB_NAME: nova_agenda
+      DB_USER: nova_agenda
+      DB_PASSWORD_FILE: /run/secrets/db_password
+      TZ: ${TZ:-America/Sao_Paulo}
+      COOKIE_SECURE: "1"
+      SESSAO_INATIVIDADE_MIN: ${SESSAO_INATIVIDADE_MIN:-30}
+      SESSAO_MAXIMA_HORAS: ${SESSAO_MAXIMA_HORAS:-12}
+      LOGIN_MAX_TENTATIVAS: ${LOGIN_MAX_TENTATIVAS:-5}
+      LOGIN_BLOQUEIO_MIN: ${LOGIN_BLOQUEIO_MIN:-15}
+      CEP_ONLINE: ${CEP_ONLINE:-1}
+      QTD_POLTRONAS: ${QTD_POLTRONAS:-12}
+      HORAS_FUNCIONAMENTO_DIA: ${HORAS_FUNCIONAMENTO_DIA:-10}
+      NOME_INSTITUICAO: ${NOME_INSTITUICAO:-INSTITUTO NACIONAL DE CÂNCER — INCA / HOSPITAL DE CÂNCER II (HC II)}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    secrets: [db_password]
+    volumes:
+      - ./importacao:/importacao:ro
+    read_only: true
+    tmpfs: ["/tmp:size=64m"]
+    cap_drop: [ALL]
+    networks: [interna, frontal]
+
+  nginx:
+    <<: *seguranca
+    build:
+      context: ./nginx
+    image: nova-agenda-2027/nginx:2.1.1
+    depends_on:
+      app: { condition: service_healthy }
+    environment:
+      SERVIDOR_NOME: ${SERVIDOR_NOME:-agenda.local}
+      SERVIDOR_IP: ${SERVIDOR_IP:-}
+      TZ: ${TZ:-America/Sao_Paulo}
+    ports:
+      - "${HTTPS_PORTA:-443}:443"
+      - "${HTTP_PORTA:-80}:80"
+    volumes:
+      - ./nginx/certs:/etc/nginx/certs
+    networks: [frontal]
+
+  backup:
+    <<: *seguranca
+    build:
+      context: ./backup
+    image: nova-agenda-2027/backup:2.1.1
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      DB_HOST: db
+      DB_NAME: nova_agenda
+      DB_USER: nova_agenda
+      DB_PASSWORD_FILE: /run/secrets/db_password
+      BACKUP_CRON: ${BACKUP_CRON:-0 0 * * *}
+      BACKUP_RETENCAO_DIAS: ${BACKUP_RETENCAO_DIAS:-30}
+      TZ: ${TZ:-America/Sao_Paulo}
+    secrets: [db_password]
+    volumes:
+      - ./backups:/backups
+    networks: [interna]
+
+networks:
+  interna:
+    internal: true      # banco e backup sem acesso externo
+  frontal: {}           # nginx <-> app (e saída da app para consulta de CEP)
+
+volumes:
+  db_data: {}
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt

@@ -1,0 +1,1 @@
+Os backups diários (.dump) aparecem aqui. Copie-os para um local seguro fora da VM.

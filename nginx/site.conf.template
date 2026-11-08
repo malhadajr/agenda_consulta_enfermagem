@@ -1,0 +1,61 @@
+# Gerado a partir do template pelo entrypoint oficial do Nginx (variáveis ${...} do ambiente)
+upstream app_backend { server app:8000; keepalive 16; }
+
+server {
+    listen 80 default_server;
+    server_name _;
+    # Toda conexão HTTP é redirecionada para HTTPS
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {
+    listen 443 ssl default_server;
+    http2 on;
+    server_name ${SERVIDOR_NOME};
+
+    ssl_certificate     /etc/nginx/certs/servidor.crt;
+    ssl_certificate_key /etc/nginx/certs/servidor.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "no-referrer" always;
+
+    # Bloqueia arquivos ocultos e métodos incomuns
+    location ~ /\. { deny all; }
+    if ($request_method !~ ^(GET|HEAD|POST|PUT|DELETE)$) { return 405; }
+
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $host;
+    # Substitui (não acrescenta) o IP do cliente: impede falsificação de X-Forwarded-For
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_read_timeout 60s;
+
+    location = /api/auth/login {
+        limit_req zone=login burst=5 nodelay;
+        proxy_pass http://app_backend;
+    }
+
+    location /api/ {
+        limit_req zone=api burst=60 nodelay;
+        proxy_pass http://app_backend;
+    }
+
+    location /static/ {
+        proxy_pass http://app_backend;
+        expires 7d;
+        add_header Cache-Control "public" always;
+        add_header X-Content-Type-Options "nosniff" always;
+    }
+
+    location / {
+        proxy_pass http://app_backend;
+    }
+}

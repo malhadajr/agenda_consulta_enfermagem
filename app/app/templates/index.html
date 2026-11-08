@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#4A148C">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Nova Agenda 2027 — Enfermagem Oncológica</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/img/icone-192.png">
+  <link rel="apple-touch-icon" href="/static/img/icone-192.png">
+  <link rel="stylesheet" href="/static/css/app.css?v=2.1.1">
+  <script type="module" src="/static/js/app.js?v=2.1.1"></script>
+</head>
+<body>
+
+<!-- ============================ TELA DE LOGIN ============================ -->
+<div id="tela-login" class="login-screen" hidden>
+  <div class="login-card">
+    <div class="login-banner"></div>
+    <div class="login-body">
+      <span class="badge-unidade">INCA HC II • ENFERMAGEM ONCOLÓGICA</span>
+      <h1>Nova Agenda 2027</h1>
+      <p class="muted">Agendamento de quimioterapia, consultas e teleconsultas</p>
+      <form id="form-login" autocomplete="on" novalidate>
+        <label>Usuário
+          <input name="usuario" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="60">
+        </label>
+        <label>Senha
+          <input name="senha" type="password" autocomplete="current-password" required maxlength="128">
+        </label>
+        <p class="form-erro" id="login-erro" role="alert"></p>
+        <button class="btn btn-primary btn-block" type="submit">Entrar</button>
+      </form>
+      <p class="login-aviso">Acesso restrito à equipe autorizada. Todas as ações ficam registradas (LGPD).</p>
+    </div>
+  </div>
+</div>
+
+<!-- ============================ APLICAÇÃO ============================ -->
+<div id="app" class="app-shell" hidden>
+  <aside class="sidebar" id="sidebar" aria-label="Menu principal">
+    <div class="sidebar-brand">
+      <img src="/static/img/anna-nery.jpg" alt="" class="brand-avatar">
+      <div>
+        <strong>Nova Agenda 2027</strong>
+        <small>INCA HC II</small>
+      </div>
+    </div>
+    <nav class="nav" id="nav">
+      <p class="nav-grupo">Atendimento</p>
+      <a href="#painel" data-tab="painel"><span class="ico" aria-hidden="true">🟢</span>Painel ao vivo</a>
+      <a href="#agenda" data-tab="agenda"><span class="ico" aria-hidden="true">📅</span>Agenda do dia</a>
+      <a href="#mural" data-tab="mural"><span class="ico" aria-hidden="true">📋</span>Mural da QT</a>
+      <a href="#pacientes" data-tab="pacientes"><span class="ico" aria-hidden="true">👥</span>Pacientes</a>
+      <a href="#intercorrencias" data-tab="intercorrencias"><span class="ico" aria-hidden="true">⚠️</span>Intercorrências</a>
+      <a href="#estatisticas" data-tab="estatisticas"><span class="ico" aria-hidden="true">🧾</span>Estatísticas diárias</a>
+      <p class="nav-grupo" data-perm="dashboards">Indicadores</p>
+      <a href="#mapa" data-tab="mapa" data-perm="mapa_calor"><span class="ico" aria-hidden="true">🔥</span>Mapa de calor</a>
+      <a href="#dashboards" data-tab="dashboards" data-perm="dashboards"><span class="ico" aria-hidden="true">📊</span>Dashboards</a>
+      <p class="nav-grupo">Cadastros</p>
+      <a href="#protocolos" data-tab="protocolos"><span class="ico" aria-hidden="true">💉</span>Protocolos e catálogos</a>
+      <a href="#usuarios" data-tab="usuarios" data-perm="usuarios"><span class="ico" aria-hidden="true">🔐</span>Usuários e permissões</a>
+      <a href="#auditoria" data-tab="auditoria" data-perm="log_auditoria"><span class="ico" aria-hidden="true">🛡️</span>Log de auditoria</a>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="user-chip">
+        <span id="user-nome">-</span>
+        <span id="user-perfil" class="role-badge">-</span>
+      </div>
+      <div class="sidebar-acoes">
+        <button type="button" class="btn btn-ghost btn-sm" data-action="trocar-senha">Trocar senha</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-action="logout">Sair</button>
+      </div>
+    </div>
+  </aside>
+  <div class="sidebar-backdrop" id="sidebar-backdrop" data-action="fechar-menu"></div>
+
+  <div class="main">
+    <header class="topbar">
+      <button type="button" class="icon-btn menu-btn" data-action="abrir-menu" aria-label="Abrir menu">☰</button>
+      <h2 id="titulo-aba">Agenda do dia</h2>
+      <div class="topbar-chips">
+        <span class="chip" title="Pacientes com tratamento iniciado">Ativos <b id="cnt-ativos">-</b></span>
+        <span class="chip" title="Pacientes com tratamento encerrado">Encerrados <b id="cnt-encerrados">-</b></span>
+      </div>
+    </header>
+
+    <main class="conteudo" id="conteudo">
+
+      <!-- ================= PAINEL AO VIVO ================= -->
+      <section class="aba" id="aba-painel" data-titulo="Painel ao vivo">
+        <div class="toolbar">
+          <span class="ao-vivo"><i class="pulso" aria-hidden="true"></i><b id="painel-dia"></b> • atualizado às <b id="painel-hora">--:--</b></span>
+          <div class="grupo-btn painel-acoes">
+            <button type="button" class="btn btn-ghost btn-sm" data-action="painel-atualizar">↻ Atualizar</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-action="painel-tela-cheia">⛶ Tela cheia</button>
+          </div>
+        </div>
+        <div class="kpi-row" id="painel-kpis"></div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-head"><h3>Poltronas agora</h3>
+              <div class="legenda"><span><i class="sw sw-pl-livre"></i>Livre</span><span><i class="sw sw-pl-ocupada"></i>Em infusão</span><span><i class="sw sw-pl-aguardando"></i>Aguardando paciente</span></div>
+            </div>
+            <div id="painel-poltronas" class="poltronas"></div>
+          </div>
+          <div class="card">
+            <h3>Poltronas em uso ao longo do dia</h3>
+            <div id="painel-horas" class="colunas"></div>
+          </div>
+        </div>
+        <div class="grid-3">
+          <div class="card"><h3>Em atendimento</h3><div id="painel-atendimento" class="lista-cards"></div></div>
+          <div class="card"><h3>Próximos a chegar</h3><div id="painel-proximos" class="lista-cards"></div></div>
+          <div class="card"><h3>Atrasados <small class="muted">(sem chegada registrada)</small></h3><div id="painel-atrasados" class="lista-cards"></div></div>
+        </div>
+        <p class="muted small">Atualização automática a cada 30 s. Nomes abreviados para proteger os pacientes em telas do setor. A atualização automática não prolonga a sessão: sem uso, ela expira normalmente.</p>
+      </section>
+
+      <!-- ================= AGENDA ================= -->
+      <section class="aba" id="aba-agenda" data-titulo="Agenda do dia">
+        <div class="toolbar">
+          <div class="date-nav">
+            <button type="button" class="icon-btn" data-action="dia-anterior" aria-label="Dia anterior">‹</button>
+            <input type="date" id="agenda-data" aria-label="Data da agenda">
+            <button type="button" class="icon-btn" data-action="dia-seguinte" aria-label="Dia seguinte">›</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-action="hoje">Hoje</button>
+          </div>
+          <span class="dia-semana" id="agenda-dia-semana"></span>
+          <button type="button" class="btn btn-primary" data-action="novo-agendamento" data-perm="agenda_editar">+ Novo agendamento</button>
+        </div>
+        <div class="kpi-row" id="agenda-resumo"></div>
+        <div class="card">
+          <div class="card-head">
+            <h3>Grade de poltronas e consultas</h3>
+            <div class="legenda">
+              <span><i class="sw sw-livre"></i>Livre</span><span><i class="sw sw-ocupado"></i>Ocupado</span>
+            </div>
+          </div>
+          <p class="muted small">Toque num horário livre para agendar ou num ocupado para ver/alterar. Deslize para o lado no celular.</p>
+          <div class="grade-wrap"><table class="grade" id="grade"></table></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>Atendimentos do dia</h3>
+            <select id="agenda-filtro-mod" aria-label="Filtrar modalidade">
+              <option value="">Todas as modalidades</option>
+              <option value="QT">Quimioterapia</option>
+              <option value="CONSULTA_ENF">Consulta de Enfermagem</option>
+              <option value="TELECONSULTA">Teleconsulta</option>
+            </select>
+          </div>
+          <div id="agenda-lista" class="lista-cards"></div>
+        </div>
+      </section>
+
+      <!-- ================= MURAL ================= -->
+      <section class="aba" id="aba-mural" data-titulo="Mural da QT">
+        <div class="toolbar no-print">
+          <label class="inline">Data <input type="date" id="mural-data"></label>
+          <label class="inline">Modalidade
+            <select id="mural-mod">
+              <option value="TODOS">Todas</option><option value="QT">Quimioterapia</option>
+              <option value="CONSULTA_ENF">Consulta de Enfermagem</option><option value="TELECONSULTA">Teleconsulta</option>
+            </select>
+          </label>
+          <div class="grupo-btn">
+            <button type="button" class="btn btn-ghost" data-action="mural-imprimir">🖨️ Imprimir</button>
+            <button type="button" class="btn btn-ghost" data-action="mural-pdf">📄 PDF</button>
+            <button type="button" class="btn btn-ghost" data-action="mural-png">🖼️ Imagem</button>
+          </div>
+        </div>
+        <div class="card mural-folha" id="mural-folha"></div>
+      </section>
+
+      <!-- ================= PACIENTES ================= -->
+      <section class="aba" id="aba-pacientes" data-titulo="Pacientes">
+        <div class="toolbar">
+          <input type="search" id="pac-busca" class="busca-grande" placeholder="Buscar por nome, prontuário ou CPF…" autocomplete="off" maxlength="100">
+          <label class="inline check"><input type="checkbox" id="pac-incluir-enc"> Incluir encerrados</label>
+          <button type="button" class="btn btn-primary" data-action="novo-paciente" data-perm="pacientes_editar">+ Novo paciente</button>
+        </div>
+        <div class="card"><div id="pac-lista" class="lista-cards"></div><div id="pac-paginacao" class="paginacao"></div></div>
+      </section>
+
+      <!-- ================= INTERCORRÊNCIAS ================= -->
+      <section class="aba" id="aba-intercorrencias" data-titulo="Intercorrências">
+        <div class="grid-2">
+          <div class="card" data-perm="intercorrencias_editar">
+            <h3>Registrar intercorrência</h3>
+            <form id="form-intercorrencia" class="form" novalidate>
+              <label>Data <input type="date" name="data" required></label>
+              <label>Paciente
+                <div class="autocomplete" data-autocomplete="paciente">
+                  <input type="search" placeholder="Digite o nome ou prontuário" autocomplete="off" maxlength="100">
+                  <input type="hidden" name="paciente_id">
+                  <div class="ac-lista" hidden></div>
+                </div>
+              </label>
+              <label>Intercorrência <select name="intercorrencia" required data-fill="intercorrencias"></select></label>
+              <label>Protocolo <select name="protocolo" data-fill="protocolos-opcional"></select></label>
+              <label>Medida tomada <textarea name="medida_tomada" rows="2" maxlength="1000"></textarea></label>
+              <label>Observação <textarea name="observacao" rows="2" maxlength="1000"></textarea></label>
+              <button class="btn btn-primary" type="submit">Registrar</button>
+            </form>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Histórico</h3>
+              <input type="month" id="inter-mes" aria-label="Mês">
+            </div>
+            <div id="inter-lista" class="tabela-wrap"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= ESTATÍSTICAS ================= -->
+      <section class="aba" id="aba-estatisticas" data-titulo="Estatísticas diárias">
+        <div class="subtabs" role="tablist">
+          <button type="button" class="subtab ativo" data-est="auditoria">Auditoria Clínica Prévia</button>
+          <button type="button" class="subtab" data-est="agendamento">Estatística de Agendamento</button>
+        </div>
+        <div class="grid-2">
+          <div class="card" data-perm="estatisticas_editar">
+            <h3 id="est-titulo">Lançamento do dia</h3>
+            <p class="muted small">Se já houver lançamento para a data, ele é carregado e pode ser corrigido.</p>
+            <form id="form-estatistica" class="form" novalidate>
+              <label>Data <input type="date" name="data" required></label>
+              <div id="est-campos" class="campos-numericos"></div>
+              <button class="btn btn-primary" type="submit">Salvar</button>
+            </form>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Lançamentos do mês</h3><input type="month" id="est-mes" aria-label="Mês"></div>
+            <div id="est-lista" class="tabela-wrap"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= MAPA DE CALOR ================= -->
+      <section class="aba" id="aba-mapa" data-titulo="Mapa de calor e cadeiras ociosas">
+        <div class="toolbar">
+          <label class="inline">Ano <input type="number" id="mapa-ano" min="2020" max="2100"></label>
+          <label class="inline">Mês
+            <select id="mapa-mes"><option value="">Ano inteiro</option></select>
+          </label>
+          <label class="inline">Poltronas <input type="number" id="mapa-poltronas" min="1" max="50"></label>
+          <label class="inline">Horas/dia <input type="number" id="mapa-horas" min="1" max="24"></label>
+          <button type="button" class="btn btn-primary" data-action="mapa-atualizar">Atualizar</button>
+        </div>
+        <div class="legenda legenda-mapa">
+          <span><i class="sw sw-ocioso"></i>Cadeiras ociosas</span><span><i class="sw sw-meta"></i>100% da capacidade</span>
+          <span><i class="sw sw-sobrecarga"></i>Acima da capacidade</span><span><i class="sw sw-fds"></i>Fim de semana</span>
+        </div>
+        <div id="mapa-meses" class="mapa-meses"></div>
+        <div class="grid-2">
+          <div class="card"><h3>Horas ocupadas por Box</h3><div id="mapa-boxes"></div></div>
+          <div class="card"><h3>Protocolos que mais ocupam poltronas (h)</h3><div id="mapa-protocolos"></div></div>
+        </div>
+        <div class="card"><h3>Tempo real (saída − entrada) × tempo estimado</h3><div id="mapa-desvios" class="tabela-wrap"></div></div>
+      </section>
+
+      <!-- ================= DASHBOARDS ================= -->
+      <section class="aba" id="aba-dashboards" data-titulo="Dashboards e indicadores">
+        <div class="toolbar"><label class="inline">Período <input type="month" id="dash-mes"></label>
+          <button type="button" class="btn btn-primary" data-action="dash-atualizar">Atualizar</button></div>
+        <div class="kpi-row" id="dash-kpis"></div>
+        <div class="grid-2">
+          <div class="card"><h3>10 protocolos mais agendados no mês</h3><div id="dash-protocolos"></div></div>
+          <div class="card"><h3>Principais pendências para início da QT</h3><div id="dash-pendencias"></div></div>
+        </div>
+        <div class="card"><h3>Pacientes com mais faltas no ano (busca ativa)</h3><div id="dash-faltas" class="tabela-wrap"></div></div>
+        <div class="card"><h3>Tempo real × estimado por protocolo</h3>
+          <p class="muted small">⚡ Muito rápido: &lt; 90% do estimado • ⏱️ No tempo: ±10% • 🐢 Muito devagar: &gt; 110%</p>
+          <div id="dash-tempo" class="tabela-wrap"></div></div>
+        <div class="card"><h3>Ritmo da equipe de enfermagem</h3><div id="dash-equipe" class="tabela-wrap"></div></div>
+        <div class="grid-2">
+          <div class="card"><h3>Intercorrências mais frequentes</h3><div id="dash-inter-tipos"></div></div>
+          <div class="card"><h3>Intercorrências por protocolo</h3><div id="dash-inter-prot"></div></div>
+        </div>
+      </section>
+
+      <!-- ================= PROTOCOLOS ================= -->
+      <section class="aba" id="aba-protocolos" data-titulo="Protocolos e catálogos">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-head"><h3>Protocolos e tempo de poltrona</h3>
+              <input type="search" id="prot-filtro" placeholder="Filtrar…" maxlength="60"></div>
+            <form id="form-protocolo" class="form form-inline" data-perm="protocolos_editar" novalidate>
+              <input name="nome" placeholder="Nome do protocolo" required maxlength="160">
+              <input name="tempo_estimado" type="time" required aria-label="Tempo estimado">
+              <button class="btn btn-primary" type="submit">Adicionar</button>
+            </form>
+            <div id="prot-lista" class="tabela-wrap"></div>
+          </div>
+          <div class="card">
+            <h3>Catálogo de intercorrências</h3>
+            <form id="form-tipo-inter" class="form form-inline" data-perm="protocolos_editar" novalidate>
+              <input name="nome" placeholder="Novo tipo de intercorrência" required maxlength="200">
+              <button class="btn btn-primary" type="submit">Adicionar</button>
+            </form>
+            <div id="tipos-lista" class="tabela-wrap"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= USUÁRIOS ================= -->
+      <section class="aba" id="aba-usuarios" data-titulo="Usuários e permissões">
+        <div class="toolbar"><button type="button" class="btn btn-primary" data-action="novo-usuario">+ Novo usuário</button></div>
+        <div class="card">
+          <div class="perfis-explicacao">
+            <div><b>ADMIN</b> — acesso total, cadastra usuários, protocolos e vê o log de auditoria.</div>
+            <div><b>ENFERMEIRO</b> — agenda, mural, pacientes, intercorrências, estatísticas diárias, mapa de calor e dashboards.</div>
+            <div><b>GESTOR</b> — somente leitura de tudo (não agenda nem altera cadastros).</div>
+          </div>
+          <div id="usr-lista" class="tabela-wrap"></div>
+        </div>
+      </section>
+
+      <!-- ================= AUDITORIA ================= -->
+      <section class="aba" id="aba-auditoria" data-titulo="Log de auditoria">
+        <form id="form-aud-filtro" class="toolbar" novalidate>
+          <input name="usuario" placeholder="Usuário" maxlength="60">
+          <input name="acao" placeholder="Ação (ex.: LOGIN)" maxlength="60">
+          <label class="inline">De <input type="date" name="data_ini"></label>
+          <label class="inline">Até <input type="date" name="data_fim"></label>
+          <button class="btn btn-primary" type="submit">Filtrar</button>
+        </form>
+        <div class="card"><div id="aud-lista" class="tabela-wrap"></div><div id="aud-paginacao" class="paginacao"></div></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Navegação inferior (celular) -->
+  <nav class="bottom-nav" aria-label="Atalhos">
+    <a href="#painel" data-tab="painel"><span aria-hidden="true">🟢</span>Ao vivo</a>
+    <a href="#agenda" data-tab="agenda"><span aria-hidden="true">📅</span>Agenda</a>
+    <a href="#mural" data-tab="mural"><span aria-hidden="true">📋</span>Mural</a>
+    <a href="#pacientes" data-tab="pacientes"><span aria-hidden="true">👥</span>Pacientes</a>
+    <button type="button" data-action="abrir-menu"><span aria-hidden="true">☰</span>Menu</button>
+  </nav>
+</div>
+
+<!-- ============================ MODAL GENÉRICO ============================ -->
+<div class="modal" id="modal" hidden role="dialog" aria-modal="true" aria-labelledby="modal-titulo">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3 id="modal-titulo"></h3>
+      <button type="button" class="icon-btn" data-action="fechar-modal" aria-label="Fechar">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+</body>
+</html>
