@@ -40,7 +40,7 @@ services:
     <<: *seguranca
     build:
       context: ./app
-    image: nova-agenda-2027/app:2.1.1
+    image: nova-agenda-2027/app:2.2.0
     depends_on:
       db: { condition: service_healthy }
     environment:
@@ -71,7 +71,7 @@ services:
     <<: *seguranca
     build:
       context: ./nginx
-    image: nova-agenda-2027/nginx:2.1.1
+    image: nova-agenda-2027/nginx:2.2.0
     depends_on:
       app: { condition: service_healthy }
     environment:
@@ -89,7 +89,7 @@ services:
     <<: *seguranca
     build:
       context: ./backup
-    image: nova-agenda-2027/backup:2.1.1
+    image: nova-agenda-2027/backup:2.2.0
     depends_on:
       db: { condition: service_healthy }
     environment:

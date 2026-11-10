@@ -1,11 +1,12 @@
 // =====================================================================
-// NOVA AGENDA 2027 — aplicação (uma página, abas por #hash)
+// NOVA AGENDA 2027 — aplicação (uma página; seções e abas por #secao/aba)
 // =====================================================================
 import {
   $, $$, api, abrirModal, autocompletarPaciente, baixar, brParaIso, confirmar, configurarApi, debounce,
   enviando, erroToast, estado, fecharModal, fmtNum, html, isoHoje, isoParaBr, lerForm, mascaraCep,
   mascaraCpf, mascaraTelefone, mesAtual, preencherForm, qs, raw, setHTML, somarDias, toast,
-} from "./core.js?v=2.1.1";
+} from "./core.js?v=2.2.0";
+import { grafico3d, PALETA } from "./charts3d.js?v=2.2.0";
 
 const MOD_LABEL = { QT: "Quimioterapia", CONSULTA_ENF: "Consulta de Enfermagem", TELECONSULTA: "Teleconsulta" };
 const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -22,6 +23,7 @@ configurarApi({
 function mostrarLogin(msg = "") {
   estado.user = null;
   estado.csrf = "";
+  estado.aba = null;
   fecharModal();
   $("#app").hidden = true;
   $("#tela-login").hidden = false;
@@ -52,6 +54,7 @@ function iniciarSessao(r) {
   $("#app").hidden = false;
   $("#user-nome").textContent = r.user.nome;
   $("#user-perfil").textContent = r.user.perfil;
+  estado.aba = null;
   $$("[data-perm]").forEach((el) => { el.hidden = !pode(el.dataset.perm); });
   if (r.user.trocar_senha) { abrirTrocaSenha(true); return; }
   carregarMetadata().then(() => irPara(location.hash.slice(1) || "painel"));
@@ -95,26 +98,63 @@ function abrirTrocaSenha(obrigatoria = false) {
 // =====================================================================
 // NAVEGAÇÃO
 // =====================================================================
+// Navegação em dois níveis:
+//   1) SEÇÃO  — link do menu lateral ([data-tab]) ↔ <section class="aba" id="aba-…"> no index.html
+//   2) ABA    — link da faixa .tabs dentro da seção ([data-sub]) ↔ <div class="sub" data-sub="…">
+// ABAS diz como carregar os dados de cada seção. Uma seção carrega tudo de uma vez; trocar de aba dentro
+// dela só mostra/esconde painéis (sem nova consulta), exceto nas seções listadas em AO_TROCAR_ABA.
+// Para criar uma aba nova basta acrescentar o link em .tabs e o <div class="sub"> correspondente no HTML.
 const ABAS = {
   painel: () => Painel.carregar(),
   agenda: () => Agenda.carregar(), mural: () => Mural.carregar(), pacientes: () => Pacientes.carregar(),
-  intercorrencias: () => Intercorrencias.carregar(), estatisticas: () => Estatisticas.carregar(),
+  intercorrencias: () => Intercorrencias.carregar(), estatisticas: (sub) => Estatisticas.abrir(sub),
   mapa: () => Mapa.carregar(), dashboards: () => Dashboards.carregar(), protocolos: () => Protocolos.carregar(),
   usuarios: () => Usuarios.carregar(), auditoria: () => Auditoria.carregar(),
 };
 const PERM_ABA = { mapa: "mapa_calor", dashboards: "dashboards", usuarios: "usuarios", auditoria: "log_auditoria" };
+// Seções em que trocar de aba muda o que é carregado (nas demais, os dados da seção já estão na tela)
+const AO_TROCAR_ABA = { estatisticas: (sub) => Estatisticas.abrir(sub) };
 
-function irPara(aba) {
-  if (!ABAS[aba] || (PERM_ABA[aba] && !pode(PERM_ABA[aba]))) aba = "agenda";
+// aria-current="page" é a única marca de "onde estou": o CSS se apoia nela e o leitor de tela a anuncia
+function marcarAtual(el, atual) {
+  if (atual) el.setAttribute("aria-current", "page"); else el.removeAttribute("aria-current");
+}
+
+// Rota = "secao" ou "secao/aba" (ex.: #dashboards/protocolos). Endereços antigos (#dashboards) continuam valendo.
+function irPara(rota) {
+  let [aba, sub = ""] = String(rota || "").split("/");
+  if (!ABAS[aba] || (PERM_ABA[aba] && !pode(PERM_ABA[aba]))) { aba = "agenda"; sub = ""; }
+  const secao = $(`#aba-${aba}`);
+  // abas que o perfil não pode ver ficam hidden (data-perm); aba inválida ou ausente cai na primeira permitida
+  const links = $$(".tabs a[data-sub]", secao).filter((a) => !a.hidden);
+  if (!links.some((a) => a.dataset.sub === sub)) sub = links[0]?.dataset.sub || "";
+  const mudouSecao = estado.aba !== aba;
+  estado.aba = aba;
+  estado.sub = sub;
   if (aba !== "painel") Painel.parar();
-  $$(".aba").forEach((s) => s.classList.toggle("ativa", s.id === `aba-${aba}`));
-  $$("[data-tab]").forEach((a) => a.classList.toggle("ativo", a.dataset.tab === aba));
-  $("#titulo-aba").textContent = $(`#aba-${aba}`).dataset.titulo;
-  document.title = `${$(`#aba-${aba}`).dataset.titulo} — Nova Agenda 2027`;
+
+  $$(".aba").forEach((s) => s.classList.toggle("ativa", s === secao));
+  $$("[data-tab]").forEach((a) => marcarAtual(a, a.dataset.tab === aba));
+  links.forEach((a) => marcarAtual(a, a.dataset.sub === sub));
+  $$(".sub", secao).forEach((painel) => { painel.hidden = painel.dataset.sub !== sub; });
+  links.find((a) => a.dataset.sub === sub)?.scrollIntoView({ block: "nearest", inline: "nearest", container: "nearest" });
+
+  const titulo = secao.dataset.titulo;
+  const nomeSub = links.find((a) => a.dataset.sub === sub)?.textContent || "";
+  $("#titulo-aba").textContent = titulo;
+  document.title = `${nomeSub && nomeSub !== titulo ? `${nomeSub} — ` : ""}${titulo} — Nova Agenda 2027`;
   document.body.classList.remove("menu-aberto");
-  if (location.hash.slice(1) !== aba) history.replaceState(null, "", `#${aba}`);
-  ABAS[aba]().catch?.(erroToast);
-  window.scrollTo(0, 0);
+  const destino = sub ? `${aba}/${sub}` : aba;
+  if (location.hash.slice(1) !== destino) history.replaceState(null, "", `#${destino}`);
+
+  // só busca dados no servidor ao entrar na seção; os gráficos 3D de abas escondidas se desenham sozinhos
+  // quando a aba aparece (o charts3d.js observa o tamanho do próprio canvas)
+  if (mudouSecao) {
+    Promise.resolve(ABAS[aba](sub)).catch(erroToast);
+    window.scrollTo(0, 0);
+  } else if (AO_TROCAR_ABA[aba]) {
+    Promise.resolve(AO_TROCAR_ABA[aba](sub)).catch(erroToast);
+  }
 }
 window.addEventListener("hashchange", () => estado.user && irPara(location.hash.slice(1)));
 
@@ -195,7 +235,7 @@ const Painel = {
       "painel-tela-cheia": () => this.telaCheia(),
     });
     document.addEventListener("visibilitychange", () => {
-      if (location.hash !== "#painel") return;
+      if (estado.aba !== "painel") return;
       if (document.hidden) this.parar(); else this.carregar();
     });
     document.addEventListener("fullscreenchange", () => {
@@ -223,7 +263,7 @@ const Painel = {
       if (e.status !== 401) this.timer = setTimeout(() => this.carregar(true), 30000);
       return;
     }
-    if (location.hash === "#painel" && !document.hidden) this.timer = setTimeout(() => this.carregar(true), 30000);
+    if (estado.aba === "painel" && !document.hidden) this.timer = setTimeout(() => this.carregar(true), 30000);
     $(".pulso")?.classList.remove("parado");
     $("#painel-dia").textContent = `${d.dia_semana}, ${d.data}`;
     $("#painel-hora").textContent = d.atualizado_em;
@@ -495,7 +535,7 @@ const FormAgendamento = {
           fecharModal();
           toast(r.mensagem, "ok");
           $("#agenda-data").value = d.data;
-          if (location.hash === "#agenda") Agenda.carregar(); else irPara("agenda");
+          if (estado.aba === "agenda") Agenda.carregar(); else irPara("agenda");
         } catch (e) { $("#ag-erro").textContent = e.message; }
       });
     });
@@ -776,7 +816,10 @@ const Intercorrencias = {
         try {
           await api("POST", "/api/intercorrencias", { ...d, paciente_id: Number(d.paciente_id), data: isoParaBr(d.data) });
           toast("Intercorrência registrada.", "ok");
-          f.reset(); f.data.value = isoHoje(); this.ac.limpar(); this.carregar();
+          f.reset(); f.data.value = isoHoje(); this.ac.limpar();
+          $("#inter-mes").value = d.data.slice(0, 7) || mesAtual();
+          await this.carregar();
+          irPara("intercorrencias/historico");
         } catch (e) { erroToast(e); }
       });
     });
@@ -811,12 +854,6 @@ const Estatisticas = {
     $("#est-mes").value = mesAtual();
     $("#est-mes").addEventListener("change", () => this.carregar());
     f.data.addEventListener("change", () => this.preencherDoDia());
-    $$(".subtab[data-est]").forEach((b) => b.addEventListener("click", () => {
-      this.tipo = b.dataset.est;
-      $$(".subtab[data-est]").forEach((x) => x.classList.toggle("ativo", x === b));
-      this.montarCampos();
-      this.carregar();
-    }));
     f.addEventListener("submit", async (ev) => {
       ev.preventDefault();
       const valores = {};
@@ -838,6 +875,12 @@ const Estatisticas = {
     if (!pode("estatisticas_editar")) $$("#est-campos input").forEach((i) => { i.disabled = true; });
   },
   registros: [],
+  async abrir(sub) {
+    await this.init();
+    const tipo = sub === "agendamento" ? "agendamento" : "auditoria";
+    if (tipo !== this.tipo) { this.tipo = tipo; this.montarCampos(); }
+    await this.carregar();
+  },
   preencherDoDia() {
     const br = isoParaBr($("#form-estatistica").data.value);
     const r = this.registros.find((x) => x.data === br);
@@ -887,7 +930,12 @@ const Mapa = {
           : html`<td class="${c.classe_cor}" title="${c.data_br}: ${c.status_dia} • ${fmtNum(c.horas_ocupadas)}h ocupadas • ${c.atendimentos} atendimento(s) • ${fmtNum(c.taxa_ocupacao_pct)}%">
               <b>${c.dia}</b>${c.horas_ocupadas ? html`<i>${fmtNum(c.horas_ocupadas, 0)}h</i>` : ""}</td>`))}</tr>`)}</tbody></table>
       </div>`)}`);
-    setHTML("mapa-boxes", barras(r.ocupacao_por_box, (b) => b.box, (b) => b.horas_ocupadas, "h"));
+    this.relevo(r);
+    grafico3d("mapa-boxes", {
+      tipo: "barras", titulo: "Horas ocupadas por poltrona", sufixo: "h", rotuloCategoria: "Poltrona",
+      colunas: r.ocupacao_por_box.map((b) => b.box.replace("Box ", "")),
+      series: [{ nome: "Horas ocupadas", cor: PALETA[0], valores: r.ocupacao_por_box.map((b) => b.horas_ocupadas) }],
+    });
     setHTML("mapa-protocolos", barras(r.top_protocolos, (p) => p.protocolo, (p) => p.horas_ocupadas, "h"));
     setHTML("mapa-desvios", r.registros_tempo_real_vs_estimado.length ? html`<table class="tabela"><thead><tr>
       <th>Data</th><th>Box</th><th>Protocolo</th><th>Estimado</th><th>Entrada</th><th>Saída</th><th>Real</th><th>Diferença</th></tr></thead>
@@ -898,8 +946,27 @@ const Mapa = {
   },
 };
 
+// Relevo 3D do mês: cada dia vira uma coluna (altura = horas de poltrona ocupadas)
+Mapa.relevo = function relevo(r) {
+  const card = $("#mapa-relevo-card");
+  card.hidden = r.meses.length !== 1;
+  if (card.hidden) return;
+  const m = r.meses[0];
+  const COR = { ocioso: "#e0457b", meta: "#eda100", sobrecarga: "#1baf7a", "fim-de-semana": "#a99fb1" };
+  grafico3d("mapa-relevo", {
+    tipo: "barras", alto: true, titulo: `Relevo de ocupação de ${m.nome_mes} de ${m.ano}`, sufixo: "h", giro: -32, inclinacao: 34,
+    rotuloCategoria: "Dia da semana",
+    colunas: ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"],
+    series: m.semanas.map((s, i) => ({ nome: `Semana ${i + 1}`, curto: `Sem ${i + 1}`, valores: s.map((c) => (c.vazio ? 0 : c.horas_ocupadas)) })),
+    cores: m.semanas.map((s) => s.map((c) => COR[c.classe_cor] || "#d9d0df")),
+    dica: (v, i, j) => { const c = m.semanas[j][i]; return c.vazio ? "fora do mês" : `${c.data_br}: ${fmtNum(v)}h • ${c.atendimentos} atendimento(s)`; },
+    legenda: [{ cor: COR.ocioso, nome: "Cadeiras ociosas" }, { cor: COR.meta, nome: "100% da capacidade" },
+      { cor: COR.sobrecarga, nome: "Acima da capacidade" }, { cor: COR["fim-de-semana"], nome: "Fim de semana" }],
+  });
+};
+
 // =====================================================================
-// DASHBOARDS
+// INDICADORES (dashboards) — gráficos em 3D
 // =====================================================================
 const Dashboards = {
   inicializado: false,
@@ -915,16 +982,58 @@ const Dashboards = {
     const [ano, mes] = ($("#dash-mes").value || mesAtual()).split("-").map(Number);
     const d = await api("GET", `/api/relatorios/dashboard?${qs({ ano, mes })}`);
     const k = d.kpis;
+    // --- aba "Visão geral": cartões + série do ano + roscas do mês ---
+    const kpi = (ico, rotulo, valor, detalhe, classe = "") => html`<div class="kpi-g ${classe}">
+      <span class="kpi-ico" aria-hidden="true">${ico}</span>
+      <div><small>${rotulo}</small><strong>${valor}</strong><span>${detalhe}</span></div></div>`;
     setHTML("dash-kpis", html`
-      <div class="kpi destaque"><small>Agendamentos em ${d.periodo.mes_nome}</small><strong>${k.agendamentos_mes}</strong><span>${k.agendamentos_ano} no ano</span></div>
-      <div class="kpi"><small>Pacientes em tratamento</small><strong>${k.pacientes_iniciados}</strong><span>${k.pacientes_encerrados} encerrados</span></div>
-      <div class="kpi"><small>Quimioterapia</small><strong>${k.total_quimioterapia}</strong><span>no mês</span></div>
-      <div class="kpi"><small>Consultas / Teleconsultas</small><strong>${k.total_consulta_enf} / ${k.total_teleconsulta}</strong><span>no mês</span></div>
-      <div class="kpi"><small>Presença</small><strong>${fmtNum(k.taxa_presenca_pct)}%</strong><span>${k.total_compareceram} presenças</span></div>
-      <div class="kpi"><small>Faltas</small><strong>${fmtNum(k.taxa_falta_pct)}%</strong><span>${k.total_faltas} faltas</span></div>
-      <div class="kpi"><small>Intercorrências</small><strong>${k.total_intercorrencias}</strong><span>no mês</span></div>
-      <div class="kpi"><small>Validação de prontuários</small><strong>${fmtNum(d.pendencias_auditoria.taxa_validacao_pct)}%</strong><span>${d.pendencias_auditoria.total_auditados} auditados</span></div>`);
-    setHTML("dash-protocolos", barras(d.top_protocolos, (p) => p.protocolo, (p) => p.total_agendado));
+      ${kpi("📅", `Agendamentos em ${d.periodo.mes_nome}`, k.agendamentos_mes, `${k.agendamentos_ano} no ano`, "destaque")}
+      ${kpi("👥", "Pacientes em tratamento", k.pacientes_iniciados, `${k.pacientes_encerrados} encerrados`)}
+      ${kpi("✅", "Presença", `${fmtNum(k.taxa_presenca_pct)}%`, `${k.total_compareceram} presenças`)}
+      ${kpi("🚫", "Faltas", `${fmtNum(k.taxa_falta_pct)}%`, `${k.total_faltas} faltas`, k.taxa_falta_pct >= 15 ? "alerta" : "")}
+      ${kpi("⚠️", "Intercorrências", k.total_intercorrencias, "no mês")}
+      ${kpi("🧾", "Validação de prontuários", `${fmtNum(d.pendencias_auditoria.taxa_validacao_pct)}%`, `${d.pendencias_auditoria.total_auditados} auditados`)}`);
+
+    // cor fixa por modalidade (a mesma nos dois gráficos, para a legenda valer para ambos)
+    const COR_MOD = { QT: PALETA[0], CONSULTA_ENF: PALETA[4], TELECONSULTA: PALETA[3] };
+    $("#dash-ano-titulo").textContent = `Atendimentos por mês em ${d.periodo.ano}`;
+    const serie = d.serie_mensal || [];
+    grafico3d("dash-ano", {
+      tipo: "barras", alto: true, titulo: `Atendimentos por mês em ${d.periodo.ano}, por modalidade`, casas: 0, rotuloCategoria: "Mês",
+      colunas: serie.map((m) => m.mes_nome.slice(0, 3)),
+      series: [
+        { nome: "Quimioterapia", curto: "QT", cor: COR_MOD.QT, valores: serie.map((m) => m.quimioterapia) },
+        { nome: "Consulta de Enfermagem", curto: "Consulta", cor: COR_MOD.CONSULTA_ENF, valores: serie.map((m) => m.consulta_enf) },
+        { nome: "Teleconsulta", curto: "Tele", cor: COR_MOD.TELECONSULTA, valores: serie.map((m) => m.teleconsulta) },
+      ],
+      vazio: "Nenhum atendimento agendado neste ano.",
+    });
+    grafico3d("dash-modalidades", {
+      tipo: "pizza", titulo: `Modalidades em ${d.periodo.mes_nome}`, casas: 0, rotuloTotal: "atendimentos", rotuloCategoria: "Modalidade",
+      fatias: [
+        { nome: "Quimioterapia", valor: k.total_quimioterapia, cor: COR_MOD.QT },
+        { nome: "Consulta de Enfermagem", valor: k.total_consulta_enf, cor: COR_MOD.CONSULTA_ENF },
+        { nome: "Teleconsulta", valor: k.total_teleconsulta, cor: COR_MOD.TELECONSULTA },
+      ],
+      vazio: "Nenhum atendimento agendado no mês.",
+    });
+    grafico3d("dash-presenca", {
+      tipo: "pizza", titulo: `Presença em ${d.periodo.mes_nome}`, casas: 0, rotuloTotal: "agendados", rotuloCategoria: "Situação",
+      fatias: [
+        { nome: "✓ Compareceram", valor: k.total_compareceram, cor: "#2E7D32" },
+        { nome: "✗ Faltaram", valor: k.total_faltas, cor: "#C62828" },
+        { nome: "Em aberto", valor: Math.max(0, k.agendamentos_mes - k.total_compareceram - k.total_faltas), cor: "#a99fb1" },
+      ],
+      vazio: "Nenhum atendimento agendado no mês.",
+    });
+
+    // --- aba "Protocolos" ---
+    grafico3d("dash-protocolos", {
+      tipo: "barras", alto: true, titulo: "10 protocolos mais agendados no mês", casas: 0, rotuloCategoria: "Protocolo",
+      colunas: d.top_protocolos.map((p) => p.protocolo),
+      series: [{ nome: "Agendamentos", cor: PALETA[0], valores: d.top_protocolos.map((p) => p.total_agendado) }],
+      dica: (v, i) => `${v} agendamento(s) • ${fmtNum(d.top_protocolos[i].percentual)}% da QT • ${fmtNum(d.top_protocolos[i].horas_totais_estimadas)}h de poltrona`,
+    });
     setHTML("dash-pendencias", barras(d.pendencias_auditoria.ranking_pendencias, (p) => p.motivo, (p) => p.quantidade));
     setHTML("dash-faltas", d.top_pacientes_faltas.length ? html`<table class="tabela"><thead><tr><th>Prontuário</th><th>Paciente</th>
       <th>Faltas</th><th>Agendados</th><th>% faltas</th><th>Telefone</th><th>Status</th></tr></thead>
@@ -939,13 +1048,43 @@ const Dashboards = {
         <td class="num">${p.muito_rapido_count}</td><td class="num">${p.no_tempo_count}</td><td class="num">${p.muito_devagar_count}</td>
         <td class="num">${p.intercorrencias_count}</td><td>${tagTempo(p.status_badge, p.status_geral)}</td></tr>`)}</tbody></table>`
       : vazio("Registre a hora de início e de término das infusões para ver esta análise."));
+    // --- abas "Tempos de infusão" e "Equipe": os 10 protocolos com mais infusões analisadas ---
+    const tp = d.tempo_real_protocolos.slice().sort((a, b) => b.total_atendimentos - a.total_atendimentos).slice(0, 10);
+    grafico3d("dash-tempo-3d", {
+      tipo: "barras", alto: true, titulo: "Infusões por protocolo: rápidas, no tempo e demoradas", casas: 0, rotuloCategoria: "Protocolo",
+      colunas: tp.map((p) => p.protocolo),
+      series: [
+        { nome: "⚡ Muito rápido", curto: "Rápido", cor: PALETA[5], valores: tp.map((p) => p.muito_rapido_count) },
+        { nome: "⏱️ No tempo", curto: "No tempo", cor: PALETA[2], valores: tp.map((p) => p.no_tempo_count) },
+        { nome: "🐢 Muito devagar", curto: "Devagar", cor: PALETA[7], valores: tp.map((p) => p.muito_devagar_count) },
+      ],
+      vazio: "Registre a hora de início e de término das infusões para ver este gráfico.",
+    });
+    const eq = d.desempenho_enfermeiros;
+    grafico3d("dash-equipe-3d", {
+      tipo: "barras", alto: true, titulo: "Tempo médio de infusão por enfermeiro(a), em minutos", casas: 0, sufixo: " min", rotuloCategoria: "Enfermeiro(a)",
+      colunas: eq.map((e) => e.enfermeiro),
+      series: [
+        { nome: "Tempo estimado (média)", curto: "Estimado", cor: PALETA[5], valores: eq.map((e) => e.tempo_estimado_medio_min) },
+        { nome: "Tempo real (média)", curto: "Real", cor: PALETA[1], valores: eq.map((e) => e.tempo_real_medio_min) },
+      ],
+      vazio: "Sem infusões finalizadas no período.",
+    });
     setHTML("dash-equipe", d.desempenho_enfermeiros.length ? html`<table class="tabela"><thead><tr><th>Enfermeiro(a)</th><th>Infusões</th>
       <th>Estimado médio</th><th>Real médio</th><th>Desvio</th><th>Intercorrências</th><th>Tendência</th></tr></thead>
       <tbody>${d.desempenho_enfermeiros.map((e) => html`<tr><td><b>${e.enfermeiro}</b></td><td class="num">${e.total_atendimentos}</td>
         <td class="num">${fmtNum(e.tempo_estimado_medio_min, 0)} min</td><td class="num">${fmtNum(e.tempo_real_medio_min, 0)} min</td>
         <td class="num">${e.desvio_medio_pct > 0 ? "+" : ""}${fmtNum(e.desvio_medio_pct)}%</td><td class="num">${e.intercorrencias_presentes}</td>
         <td>${tagTempo(e.badge, e.tendencia)}</td></tr>`)}</tbody></table>` : vazio("Sem infusões finalizadas no período."));
-    setHTML("dash-inter-tipos", barras(d.intercorrencias.principais_tipos, (i) => i.tipo, (i) => i.quantidade));
+    // --- aba "Intercorrências": no máximo 7 fatias; o restante é somado em "Outros" ---
+    const tipos = d.intercorrencias.principais_tipos;
+    const fatias = tipos.slice(0, 7).map((t) => ({ nome: t.tipo, valor: t.quantidade }));
+    const resto = tipos.slice(7).reduce((soma, t) => soma + t.quantidade, 0);
+    if (resto) fatias.push({ nome: "Outros", valor: resto, cor: "#a99fb1" });
+    grafico3d("dash-inter-tipos", {
+      tipo: "pizza", titulo: "Intercorrências mais frequentes", casas: 0, rotuloTotal: "intercorrências", rotuloCategoria: "Tipo", fatias,
+      vazio: "Nenhuma intercorrência registrada no mês.",
+    });
     setHTML("dash-inter-prot", barras(d.intercorrencias.por_protocolo, (i) => i.protocolo, (i) => i.quantidade));
   },
 };

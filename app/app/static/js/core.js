@@ -46,7 +46,8 @@ export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
 // ---------- API ----------
-export const estado = { csrf: "", user: null, meta: null };
+// aba/sub = seção e aba abertas no momento (mantidas pelo irPara do app.js)
+export const estado = { csrf: "", user: null, meta: null, aba: null, sub: "" };
 
 export class ApiErro extends Error {
   constructor(msg, status, dados) { super(msg); this.status = status; this.dados = dados || {}; }

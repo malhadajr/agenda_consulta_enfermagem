@@ -288,6 +288,20 @@ def dashboard(db: Session, ano: Optional[int] = None, mes: Optional[int] = None)
     falt = sum(1 for a in ag_mes if a.compareceu == "N")
     aval = pres + falt
 
+    # Série do ano (alimenta o gráfico 3D "Atendimentos por mês" da aba Visão geral).
+    # Sempre devolve os 12 meses, mesmo os zerados, para o eixo do gráfico não mudar de tamanho.
+    serie_mensal = []
+    for m in range(1, 13):
+        do_mes = [a for a in ags if a.data.month == m]
+        serie_mensal.append({
+            "mes": m, "mes_nome": NOMES_MESES[m], "total": len(do_mes),
+            "quimioterapia": sum(1 for a in do_mes if a.modalidade == "QT"),
+            "consulta_enf": sum(1 for a in do_mes if a.modalidade == "CONSULTA_ENF"),
+            "teleconsulta": sum(1 for a in do_mes if a.modalidade == "TELECONSULTA"),
+            "presencas": sum(1 for a in do_mes if a.compareceu == "S"),
+            "faltas": sum(1 for a in do_mes if a.compareceu == "N"),
+        })
+
     # Ranking de faltas (ano inteiro) — busca ativa
     faltas: Dict[int, Dict[str, Any]] = {}
     for a in ags:
@@ -344,6 +358,7 @@ def dashboard(db: Session, ano: Optional[int] = None, mes: Optional[int] = None)
             "taxa_falta_pct": round(falt / aval * 100, 1) if aval else 0.0,
             "total_intercorrencias": len(inters),
         },
+        "serie_mensal": serie_mensal,
         "top_protocolos": top_prot,
         "top_pacientes_faltas": ranking_faltas,
         "pendencias_auditoria": estatisticas_consolidadas(db, ano, mes),

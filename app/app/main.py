@@ -20,7 +20,7 @@ from app.routers import agenda, auth, cadastros, pacientes, registros, relatorio
 from app.services.common import RegraNegocio
 
 BASE_DIR = Path(__file__).resolve().parent
-VERSAO = "2.1.1"
+VERSAO = "2.2.0"
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),

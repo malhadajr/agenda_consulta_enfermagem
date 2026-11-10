@@ -166,6 +166,9 @@ def test_dashboard_e_mapa_de_calor(enf, gestor):
     d = gestor.get("/api/relatorios/dashboard?ano=2027&mes=3").json()
     assert d["kpis"]["total_quimioterapia"] == 1 and d["kpis"]["taxa_presenca_pct"] == 100.0
     assert d["tempo_real_protocolos"][0]["status_geral"] == "MUITO DEVAGAR"
+    serie = d["serie_mensal"]
+    assert len(serie) == 12 and serie[2]["mes_nome"] == "Março"
+    assert serie[2]["quimioterapia"] == 1 and serie[2]["presencas"] == 1 and sum(m["total"] for m in serie) == 1
     m = gestor.get("/api/relatorios/mapa-calor?ano=2027&mes=3").json()
     dia = [c for s in m["meses"][0]["semanas"] for c in s if not c["vazio"] and c["dia"] == 10][0]
     assert dia["horas_ocupadas"] == 5.0 and dia["classe_cor"] == "ocioso"

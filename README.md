@@ -2,7 +2,10 @@
 
 Sistema web de **agendamento de quimioterapia, consultas de enfermagem e teleconsultas**, com controle de
 ocupação das poltronas (Boxes), mural diário para impressão, cadastro de pacientes, registro de
-intercorrências, estatísticas diárias, mapa de calor de cadeiras ociosas e dashboards gerenciais.
+intercorrências, estatísticas diárias, mapa de calor de cadeiras ociosas e indicadores gerenciais com gráficos em 3D.
+
+**Versão atual: 2.2.0** — telas reorganizadas em seções com abas simples e painel de indicadores com gráficos
+em 3 dimensões. Veja o [histórico de versões](#histórico-de-versões) no fim deste documento.
 
 A versão 2.0 **substitui a planilha Google Sheets por um banco de dados PostgreSQL local**. Ela roda numa VM
 Linux da Intranet, empacotada em contêineres Docker. **Nenhum dado sai da rede do hospital.** A única
@@ -278,7 +281,8 @@ A suíte tem **45 testes**:
 
 - **Regras de negócio:** CPF único, encerramento e reativação, prontuário automático, conflito de Box pela
   duração do protocolo, falta que libera a vaga, agendamento cruzado, consultas de 1 h das 08:00 às 17:00,
-  mural, intercorrências, estatísticas, dashboard, mapa de calor e painel ao vivo.
+  mural, intercorrências, estatísticas, indicadores (incluindo a série mensal que alimenta os gráficos 3D),
+  mapa de calor e painel ao vivo.
 - **Segurança:** todas as rotas exigem login, mensagem de login genérica, bloqueio por tentativas, cookie
   seguro, hash Argon2id, CSRF, logout, cookie forjado, permissões de cada perfil, troca de senha obrigatória,
   política de senha, último admin, cabeçalhos, erros sem vazamento, minimização de dados, log sem dados
@@ -308,6 +312,10 @@ docker compose up -d
 ```
 
 As tabelas novas são criadas automaticamente. Os dados existentes não são alterados.
+
+> **Da 2.1.x para a 2.2.0:** a mudança é só de telas e de um campo novo na resposta dos indicadores. Não há
+> alteração de banco de dados nem de configuração (`.env`). Depois de atualizar, peça aos usuários que
+> recarreguem a página (Ctrl+F5) uma vez; os endereços salvos nos favoritos continuam funcionando.
 
 ## 13. Solução de problemas
 
@@ -339,7 +347,9 @@ nova-agenda-2027/
 │   │   ├── services/         # regras de negócio (agenda, pacientes, relatórios, exportação, endereço, auditoria)
 │   │   ├── seed/             # catálogo inicial de protocolos e intercorrências (sem dados pessoais)
 │   │   ├── templates/index.html
-│   │   └── static/           # css, js (sem dependências externas), img
+│   │   └── static/           # css, img e js sem dependências externas:
+│   │                         #   core.js (API, modal, utilidades), app.js (telas e navegação por abas),
+│   │                         #   charts3d.js (gráficos 3D desenhados em canvas)
 │   └── tests/                # testes funcionais e de segurança
 ├── nginx/                    # proxy HTTPS (certs/ recebe o certificado)
 ├── backup/                   # contêiner de backup
@@ -356,18 +366,18 @@ nova-agenda-2027/
 
 | Tela | ADMIN | ENFERMEIRO | GESTOR |
 |---|:---:|:---:|:---:|
-| Painel ao vivo | ✅ | ✅ | ✅ |
-| Agenda do dia (ver) | ✅ | ✅ | ✅ |
+| Ao vivo (Poltronas, Fila do dia) | ✅ | ✅ | ✅ |
+| Agenda (ver a grade e os atendimentos do dia) | ✅ | ✅ | ✅ |
 | Agendar, alterar, registrar presença/falta, excluir | ✅ | ✅ | — |
-| Mural da QT (imprimir, PDF, imagem) | ✅ | ✅ | ✅ |
+| Mural (imprimir, PDF, imagem) | ✅ | ✅ | ✅ |
 | Pacientes (ver) | ✅ | ✅ | ✅ |
 | Pacientes (cadastrar, editar, encerrar, reativar) | ✅ | ✅ | — |
-| Intercorrências (registrar) | ✅ | ✅ | ver |
-| Estatísticas diárias (lançar) | ✅ | ✅ | ver |
-| Mapa de calor e Dashboards | ✅ | ✅ | ✅ |
-| Protocolos e catálogos (editar) | ✅ | ver | ver |
-| Usuários e permissões | ✅ | — | — |
-| Log de auditoria | ✅ | — | — |
+| Intercorrências (aba "Registrar nova") | ✅ | ✅ | só o histórico |
+| Estatísticas (lançar) | ✅ | ✅ | ver |
+| Indicadores e Ocupação | ✅ | ✅ | ✅ |
+| Cadastros: protocolos e tipos de intercorrência (editar) | ✅ | ver | ver |
+| Usuários | ✅ | — | — |
+| Auditoria | ✅ | — | — |
 
 ## 16. Primeiro acesso
 
@@ -381,29 +391,57 @@ A sessão encerra depois de 30 minutos sem uso. Em computadores compartilhados, 
 
 ## 17. Uso das telas
 
-**Painel ao vivo** (tela inicial, todos os perfis). Retrato simplificado do setor **agora**, que se atualiza
-sozinho a cada 30 segundos:
-- **Indicadores:** poltronas em uso agora (ex.: 4/12) e ocupação do dia, agendados, em atendimento,
-  presentes (% de presença), aguardando chegada e faltas, atrasados e intercorrências do dia.
-- **Poltronas agora:** os 12 Boxes com o estado de cada um (Livre, Em infusão com barra de progresso e horário
-  de término, ou Aguardando paciente).
-- **Poltronas em uso ao longo do dia:** gráfico por hora, com a hora atual destacada.
-- **Em atendimento**, **Próximos a chegar** e **Atrasados**: estes últimos passaram mais de 15 minutos do
-  horário sem chegada registrada.
-- **⛶ Tela cheia:** para deixar o painel num monitor ou TV do setor.
+**Como navegar.** O **menu lateral** (no celular e no tablet: botão ☰ e a barra de atalhos embaixo) leva às
+seções. Dentro de cada seção, as **abas no topo** separam os assuntos, um por aba. A faixa de abas fica presa
+no topo enquanto você rola a tela e, quando não cabe inteira, desliza para o lado.
+
+| Seção | Abas |
+|---|---|
+| 🟢 Ao vivo | Poltronas · Fila do dia |
+| 📅 Agenda | Grade de horários · Atendimentos do dia |
+| 📋 Mural | — |
+| 👥 Pacientes | — |
+| ⚠️ Intercorrências | Histórico · Registrar nova |
+| 🧾 Estatísticas | Auditoria clínica prévia · Estatística de agendamento |
+| 📊 Indicadores | Visão geral · Protocolos · Faltas · Tempos de infusão · Equipe · Intercorrências |
+| 🔥 Ocupação | Calendário · Poltronas e protocolos · Tempo real × estimado |
+| 💉 Cadastros | Protocolos · Tipos de intercorrência |
+| 🔐 Usuários (admin) | — |
+| 🛡️ Auditoria (admin) | — |
+
+Cada aba tem endereço próprio (ex.: `…/#dashboards/protocolos`), então dá para salvar nos favoritos ou
+compartilhar o link de uma aba específica.
+
+**Gráficos em 3D.** Os gráficos de colunas e de rosca de **Indicadores** e **Ocupação** são tridimensionais:
+- **Arraste** o gráfico para girar (no celular, deslize o dedo para os lados). **Duplo clique** (ou toque
+  duplo) volta à posição inicial. No teclado, clique no gráfico e use as **setas**; **Home** reinicia.
+- **Passe o mouse** (ou toque) numa coluna ou fatia para ver o valor exato.
+- Abaixo de cada gráfico há a legenda e o link **Ver dados em tabela**, com os mesmos números em formato de
+  tabela (útil para copiar, imprimir ou para leitores de tela).
+- Os gráficos são desenhados pelo próprio sistema, sem internet e sem bibliotecas de terceiros.
+
+**Ao vivo** (tela inicial, todos os perfis). Retrato simplificado do setor **agora**, que se atualiza sozinho a
+cada 30 segundos. Os indicadores do topo aparecem nas duas abas: poltronas em uso agora (ex.: 4/12) e ocupação
+do dia, agendados, em atendimento, presentes (% de presença), aguardando chegada e faltas, atrasados e
+intercorrências do dia.
+- Aba **Poltronas:** os 12 Boxes com o estado de cada um (Livre, Em infusão com barra de progresso e horário
+  de término, ou Aguardando paciente) e o gráfico de poltronas em uso por hora, com a hora atual destacada.
+- Aba **Fila do dia:** **Em atendimento**, **Próximos a chegar** e **Atrasados** (estes últimos passaram mais
+  de 15 minutos do horário sem chegada registrada).
+- **⛶ Tela cheia:** para deixar o painel num monitor ou TV do setor. Nesse modo as duas abas aparecem juntas.
 
 Para proteger os pacientes em telas à vista de outras pessoas, os nomes aparecem abreviados (ex.: "Ana F. S.").
 A atualização automática **não prolonga a sessão**: se ninguém usar o sistema por 30 minutos, a sessão expira
 como em qualquer outra tela. Para um monitor fixo, aumente `SESSAO_INATIVIDADE_MIN` com cautela ou faça login
 novamente quando necessário.
 
-**Agenda do dia.** Escolha a data com as setas ou o calendário.
-- A **grade** mostra os Boxes 1 a 12 e, abaixo do Box 12, as linhas **(Consulta Enf)** e **(Teleconsulta)**,
-  das 08:00 às 17:00.
-- Toque num horário **livre** para agendar já com o Box e a hora preenchidos. Toque num horário **ocupado**
-  para ver ou alterar o agendamento.
-- No celular, deslize a grade para o lado.
-- Na lista **Atendimentos do dia** você marca **✓ Veio** ou **✗ Faltou**, edita ou exclui.
+**Agenda.** Escolha a data com as setas ou o calendário; ela vale para as duas abas.
+- Aba **Grade de horários:** mostra os Boxes 1 a 12 e, abaixo do Box 12, as linhas **(Consulta Enf)** e
+  **(Teleconsulta)**, das 08:00 às 17:00. Toque num horário **livre** para agendar já com o Box e a hora
+  preenchidos. Toque num horário **ocupado** para ver ou alterar o agendamento. No celular, deslize a grade
+  para o lado.
+- Aba **Atendimentos do dia:** a lista do dia, onde você marca **✓ Veio** ou **✗ Faltou**, edita ou exclui.
+  Dá para filtrar por modalidade.
 
 **Novo agendamento.**
 1. Escolha a modalidade e a data.
@@ -413,8 +451,8 @@ novamente quando necessário.
 5. Se quiser, informe a enfermeira responsável, a presença, as horas reais de início e término e a
    observação. Marque **Registrar intercorrência** para lançar a ocorrência junto com o atendimento.
 
-**Mural da QT.** É a folha do dia com todos os atendimentos das 3 modalidades. Use **Imprimir** (A4
-paisagem), **PDF** ou **Imagem**.
+**Mural.** É a folha do dia com todos os atendimentos das 3 modalidades. Use **Imprimir** (A4 paisagem),
+**PDF** ou **Imagem**.
 
 **Pacientes.**
 - Busque por nome, prontuário ou CPF. Marque "Incluir encerrados" para ver também os tratamentos encerrados.
@@ -423,37 +461,52 @@ paisagem), **PDF** ou **Imagem**.
 - Na ficha do paciente: **Editar**, **Encerrar tratamento** (motivo: desistência, cura ou morte) e
   **Reativar tratamento** em caso de retorno ou recidiva. A reativação usa o mesmo cadastro, sem duplicar o CPF.
 
-**Intercorrências.** Registre data, paciente, tipo (catálogo oficial), protocolo, medida tomada e observação.
-O histórico do mês fica ao lado.
+**Intercorrências.**
+- Aba **Histórico:** as intercorrências do mês escolhido.
+- Aba **Registrar nova** (admin e enfermagem): data, paciente, tipo (catálogo oficial), protocolo, medida
+  tomada e observação. Ao salvar, o sistema volta para o histórico do mês do registro.
 
-**Estatísticas diárias.** Substituem as abas da planilha "Estatística Auditoria Clínica Prévia" e
-"Estatística agendamento". Escolha a data e preencha os números. Se a data já tiver lançamento, os valores são
-carregados para correção. A tabela do mês traz os totais.
+**Estatísticas.** Substituem as abas da planilha "Estatística Auditoria Clínica Prévia" e "Estatística
+agendamento" — agora uma aba para cada. Escolha a data e preencha os números. Se a data já tiver lançamento,
+os valores são carregados para correção. A tabela do mês traz os totais.
 
-**Mapa de calor** (todos os perfis). Calendário colorido por dia:
-- 🟥 cadeiras ociosas (menos de 120 h/dia)
-- 🟨 100% da capacidade
-- 🟩 acima da capacidade
-- ⬜ fim de semana
+**Indicadores** (todos os perfis; antes chamados "Dashboards"). Escolha o mês no campo **Período**; ele vale
+para todas as abas.
+- **Visão geral:** seis cartões (agendamentos do mês e do ano, pacientes em tratamento, presença, faltas,
+  intercorrências e validação de prontuários), o gráfico 3D **Atendimentos por mês** do ano inteiro, separado
+  por modalidade, e duas roscas 3D: **Modalidades no mês** e **Presença no mês**.
+- **Protocolos:** colunas 3D com os 10 protocolos mais agendados e o ranking das pendências para o início da QT.
+- **Faltas:** pacientes com mais faltas no ano, com telefone, para busca ativa.
+- **Tempos de infusão:** colunas 3D por protocolo (⚡ muito rápido, ⏱️ no tempo, 🐢 muito devagar) e a tabela
+  de tempo real × estimado.
+- **Equipe:** colunas 3D com o tempo médio estimado e real por enfermeiro(a) e a tabela de ritmo da equipe.
+- **Intercorrências:** rosca 3D com os tipos mais frequentes e o ranking por protocolo.
 
-A tela também mostra as horas por Box, os protocolos que mais ocupam poltrona e a comparação entre o tempo
-real e o estimado.
+**Ocupação** (todos os perfis; antes chamada "Mapa de calor"). Os filtros de ano, mês, poltronas e horas/dia
+valem para as três abas.
+- **Calendário:** mapa de calor colorido por dia:
+  - 🟥 cadeiras ociosas (menos de 120 h/dia)
+  - 🟨 100% da capacidade
+  - 🟩 acima da capacidade
+  - ⬜ fim de semana
 
-**Dashboards** (todos os perfis). Indicadores do mês, os 10 protocolos mais agendados, as pendências para o
-início da QT, os pacientes com mais faltas (para busca ativa), o tempo real × estimado por protocolo
-(⚡ rápido, ⏱️ no tempo, 🐢 devagar), o ritmo da equipe e as intercorrências.
+  Ao escolher **um único mês**, aparece também o **relevo 3D** do mês: uma coluna por dia, com a altura igual
+  às horas de poltrona ocupadas.
+- **Poltronas e protocolos:** colunas 3D com as horas ocupadas por poltrona e os protocolos que mais ocupam
+  poltrona.
+- **Tempo real × estimado:** as infusões com hora de início e término registradas e a diferença em minutos.
 
-**Protocolos e catálogos.** Lista de protocolos com o tempo de poltrona e o catálogo de intercorrências. O
+**Cadastros.** Aba **Protocolos** (com o tempo de poltrona de cada um) e aba **Tipos de intercorrência**. O
 admin inclui itens e ativa ou desativa os existentes. Para preservar o histórico, o nome de um protocolo não é
 alterado: desative o antigo e cadastre um novo.
 
-**Usuários e permissões** (admin).
+**Usuários** (admin).
 - Crie usuários com o perfil adequado. O sistema gera uma **senha temporária**, que aparece só uma vez:
   entregue-a pessoalmente.
 - **Redefinir senha** desbloqueia a conta e gera uma nova senha temporária.
 - Desative quem deixou o setor. A desativação encerra as sessões abertas na hora.
 
-**Log de auditoria** (admin). Consulte quem fez o quê e quando, com filtros por usuário, ação e período.
+**Auditoria** (admin). Consulte quem fez o quê e quando, com filtros por usuário, ação e período.
 
 ## 18. Regras de agendamento
 
@@ -471,3 +524,24 @@ alterado: desative o antigo e cadastre um novo.
 - **Horas reais de início e término**, quando informadas, substituem o horário previsto nos cálculos de
   ocupação e na análise de tempo real × estimado.
 - Para o agendamento ser aceito, o protocolo e o Box precisam estar cadastrados.
+
+---
+
+## Histórico de versões
+
+### 2.2.0 — telas mais simples e gráficos em 3D
+- **Navegação:** menu lateral mais curto e **abas simples dentro de cada seção** (19 abas no total, uma por
+  assunto). Cada aba tem endereço próprio (`#secao/aba`); os endereços antigos continuam funcionando.
+- **Indicadores** (antigos "Dashboards") refeitos: cartões de indicadores, colunas 3D e roscas 3D giratórias,
+  com legenda, valor ao passar o mouse e tabela de dados em cada gráfico.
+- **Ocupação** (antigo "Mapa de calor"): colunas 3D por poltrona e **relevo 3D** do mês.
+- **Novo arquivo** `static/js/charts3d.js`: gráficos desenhados em canvas, sem bibliotecas externas, de acordo
+  com a política de segurança de conteúdo (CSP) já em vigor.
+- **API:** `GET /api/relatorios/dashboard` passou a devolver `serie_mensal` (12 meses do ano, por modalidade,
+  com presenças e faltas). Nenhuma mudança de banco de dados.
+- **Acessibilidade:** seção e aba atuais marcadas com `aria-current`, animações respeitam a preferência de
+  movimento reduzido do aparelho, gráficos com descrição e alternativa em tabela.
+
+### 2.1.1
+- Versão anterior: painel ao vivo, agenda, mural, pacientes, intercorrências, estatísticas, mapa de calor,
+  dashboards com barras simples, usuários e log de auditoria.
